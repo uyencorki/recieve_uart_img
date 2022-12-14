@@ -85,6 +85,8 @@ MainWindow::~MainWindow()
 
 void MainWindow::save_img (int img_cout)
 {
+    // test git
+
     QString file_name ;
     file_name =   save_path + "/uart_img_" + QString::number(img_cout) + ".jpg";
     cout << "file_name = " << file_name.toStdString() << endl;
@@ -106,8 +108,6 @@ void MainWindow::save_img (int img_cout)
                data_img = QByteArray::fromHex(img_data[i].toUtf8());
                start_write = true ;
            }
-
-
 
             if (start_write == true)
             {
