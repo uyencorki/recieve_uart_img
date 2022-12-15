@@ -22,8 +22,15 @@
 using namespace std;
 
 
-bool SETTING_CONF_OK = false;
+
 int img_cout = 0;
+int COM_NUM =  0;
+
+QElapsedTimer timer_1;
+
+
+
+bool SETTING_CONF_OK = false;
 QString save_path ;
 QString img_data [300] ;
 
@@ -36,6 +43,49 @@ bool stop_save = true;
 // get para and set uart
 void get_setting_para ()
 {
+
+    QStringList sFileAsList    ;
+    QFile fTextFile("com_num.conf");
+    QString data_str ;
+    if(fTextFile.open(QIODevice::ReadWrite | QIODevice::Text))
+    {
+        QTextStream tStream(&fTextFile);
+        tStream.setCodec("UTF-8");
+        //write Text into QStringList
+        while(!tStream.atEnd())
+        {
+            data_str = tStream.readAll();
+        }
+        cout << "data_str =  "<< endl << data_str.toStdString() << endl;
+        sFileAsList = data_str.split("\n");
+        for (int i = 0; i < sFileAsList.size() ; i ++)
+        {
+            if (sFileAsList[i].contains("image_num"))
+            {
+                QString pr = "=";
+                int pos = sFileAsList[i].indexOf(pr,Qt::CaseSensitive);
+                QString num = sFileAsList[i].mid(pos+1);
+                img_cout =  num.toInt();
+                if (img_cout > 10000) img_cout = 0 ;
+            }
+
+            if (sFileAsList[i].contains("COM"))
+            {
+                QString pr = "=";
+                int pos = sFileAsList[i].indexOf(pr,Qt::CaseSensitive);
+                QString num = sFileAsList[i].mid(pos+1);
+                COM_NUM =  num.toInt();
+            }
+
+
+        }
+
+         fTextFile.close();
+    }
+
+    return ;
+
+
 
 }
 
@@ -64,14 +114,17 @@ MainWindow::MainWindow(QWidget *parent)
     // load path
     QDir dir (".");
     save_path = dir.absolutePath();
+    save_path = save_path + "/receive_data";
     ui->output_dir_text->appendPlainText(save_path);
+    cout << " save_path in ma im " << save_path.toStdString() << endl;
 
 
+    timer = new QTimer(this);
+    // setup signal and slot
+    connect(timer, SIGNAL(timeout()),this, SLOT(MyTimerSlot()));
+    timer->start(100);
 
-     //Set name again
-//     UART DEBUG check
-//     connect(&timer_uart_setting_wait,SIGNAL(timeout()),  this, SLOT(uart_debug_setting()));
-//     timer_uart_setting_wait.start(100);
+
 }
 
 MainWindow::~MainWindow()
@@ -108,9 +161,8 @@ void MainWindow::save_img (int img_cout)
                data_img = QByteArray::fromHex(img_data[i].toUtf8());
                start_write = true ;
            }
-
-            if (start_write == true)
-            {
+           if (start_write == true)
+           {
                 if (i == r_d -1 )
                 {
                    QStringList final_str =  img_data[i].split(QRegExp("\\s+"), QString::SkipEmptyParts);
@@ -121,34 +173,20 @@ void MainWindow::save_img (int img_cout)
                 {
                 img_data_tol += img_data[i];
                 }
-             }
+            }
 
            if (img_data_tol.length() == 0)
            {
                ui->image_show_lable->setText("header is not found, please take another picture.. ");
                img_cout = img_cout - 1;
            }
-
-
             data_img = QByteArray::fromHex(img_data_tol.toUtf8());
-
-
-
-
-
-
-            }
+           }
 
          file.write(data_img);
     }
     file.close();
 }
-
-
-
-
-
-
 
 // related to uart
 
@@ -158,14 +196,48 @@ void MainWindow::uart_send(QString cmd)
     serialPort->write("\n");
 }
 
+bool saving_img = false;
+bool geting_data = false;
+bool print = false;
+
+float geting_data_time;
+float saving_data_time;
+
+void MainWindow::MyTimerSlot()
+{
+
+    if( (geting_data == true ) && ( print == true ))
+    {
+//        cout << "Data receiving time " << endl;
+        QString set_time = "Data receiving time:  " + QString::number( timer_1.elapsed()/1000);
+        timer_1.elapsed();
+        ui->image_show_lable->setText(set_time);
+        geting_data_time = timer_1.elapsed();
+    }
+    if ((saving_img == true ) && (print == true))
+    {
+        cout <<"Image saving time " << endl;
+        QString set_time = "Image saving time:  " + QString::number( timer_1.elapsed()/1000);
+        timer_1.elapsed();
+        ui->image_show_lable->setText(set_time);
+        saving_data_time = timer_1.elapsed();
+        saving_data_time = saving_data_time - geting_data_time;
+    }
+
+}
+
+
+
 
 void MainWindow::receive_data()
 {
 // "Saving image, please wait a moment");
 
-    ui->image_show_lable->setText("Saving image, please wait a moment ....");
-    ui->img_name->setText("....");
 
+//    ui->image_show_lable->setText("Saving image, please wait a moment ....");
+    geting_data = true;
+
+    ui->img_name->setText("....");
     stop_save = true ;
     QByteArray databyte = serialPort->readAll();
     QString data = databyte;
@@ -181,6 +253,11 @@ void MainWindow::receive_data()
 
     if (stop_save == false )
     {
+        QElapsedTimer timer_2;
+        timer_2.start();
+        geting_data = false;
+        saving_img  = true;
+
         save_img (img_cout);
         QString image_name = "uart_img_";
         image_name = image_name + QString::number(img_cout) + ".jpg";
@@ -189,41 +266,39 @@ void MainWindow::receive_data()
         image_name = save_path + "/" +image_name ;
         qDebug () << "save path " << image_name << endl ;
 
+        print = false;
+
         QPixmap pix(image_name);
         ui->image_show_lable->setPixmap(pix);
         ui->image_show_lable->setScaledContents(true);
         ui->image_show_lable->setSizePolicy( QSizePolicy::Ignored, QSizePolicy::Ignored );
+
+        saving_img  = false;
+
+
+        float r_tm = timer_2.elapsed();
+        r_tm = r_tm /1000 ;
+
+        QString pri_r_tm = "Data receiving time:  " + QString::number( int(geting_data_time/1000)) + " Second";
+        QString pri_s_tm = "Image saving time:    " + QString::number(r_tm) + " Second";
+        ui->image_save_time->setText(pri_s_tm);
+        ui->data_receive_time->setText(pri_r_tm);
+
+
     }
 
 
 
 }
 
-
 void MainWindow::uart_debug_setting()
 {
 
-    QByteArray com_num_dat;
-    QFile file_read("com_num.conf");
-    if (!file_read.open(QIODevice::ReadOnly | QIODevice::Text))
-          return;
-
-    QTextStream in(&file_read);
-    // You could use readAll() here, too.
-    while (!in.atEnd())
-    {
-          QString line = in.readLine();
-          com_num_dat.append(line);
-    }
-    cout <<"com_num_dat " <<  com_num_dat.toStdString() << endl;
-    file_read.close();
-
-    ui->com_number->setValue(com_num_dat.toInt());
-
+    ui->com_number->setValue(COM_NUM);
 
     // open COM
     QString com_mubber =  "COM";
-    com_mubber = com_mubber + com_num_dat;
+    com_mubber = com_mubber + QString::number(COM_NUM);
     serialPort->close();
     serialPort->setPortName(com_mubber);
     serialPort->open(QIODevice::ReadWrite);
@@ -232,13 +307,6 @@ void MainWindow::uart_debug_setting()
     {
         QString open_com = "OPEN " + com_mubber + " FAULT..." ;
         ui->image_show_lable->setText(open_com);
-//        cout << " serialPort->isOpen()) " << endl;
-//        //bat dau count_display
-//        if(count_display_timer.isActive()==false) {
-//            //bat dau lai count
-//            //start
-//            count_display_timer.start(1000);
-//        }
         return;
     }
 
@@ -275,16 +343,7 @@ void MainWindow::uart_debug_setting()
    //stop qua trinh check uart debug
     timer_uart_setting_wait.stop();
 
-
-
-
 }
-
-
-
-
-
-
 
 // related to buttom
 void MainWindow::on_set_com_clicked()
@@ -292,14 +351,56 @@ void MainWindow::on_set_com_clicked()
     cout << "run to uart_debug_setting " << endl;
 
     // save com number
-    QString com_num_str = QString::number(ui->com_number->value());
-    QFile file("com_num.conf");
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text))
-        return;
+    COM_NUM = ui->com_number->value();
 
-    QTextStream out(&file);
-    out <<com_num_str;
-    file.close();
+    QStringList sFileAsList    ;
+    QFile fTextFile("com_num.conf");
+    QString data_str ;
+    if(fTextFile.open(QIODevice::ReadWrite | QIODevice::Text))
+    {
+        QTextStream tStream(&fTextFile);
+        tStream.setCodec("UTF-8");
+        //write Text into QStringList
+        while(!tStream.atEnd())
+        {
+            data_str = tStream.readAll();
+        }
+
+        cout << "data_str =  "<< endl << data_str.toStdString() << endl;
+
+        sFileAsList = data_str.split("\n");
+
+
+        for (int i = 0; i < sFileAsList.size() ; i ++)
+        {
+            if (sFileAsList[i].contains("COM"))
+            {
+                QString pr = "=";
+                int pos = sFileAsList[i].indexOf(pr,Qt::CaseSensitive);
+                QString num = sFileAsList[i].mid(pos+1);
+                sFileAsList[i] = sFileAsList[i].left(pos+1) +QString::number(COM_NUM);
+            }
+        }
+
+        //Check if FileList is empty
+        if (sFileAsList.isEmpty())
+        {
+            fTextFile.close();
+            return ;
+        }
+
+        //Rewrite QStringList into Textfile
+        tStream.seek(0);
+        for (int i = 0; i < sFileAsList.size(); ++i)
+        {
+            if (i == ( sFileAsList.size() - 1) )
+                fTextFile.write(sFileAsList[i].toUtf8()) ;// + "\n");
+            else
+                fTextFile.write(sFileAsList[i].toUtf8() + "\n");
+        }
+
+            fTextFile.close();
+        }
 
     uart_debug_setting();
 }
@@ -318,45 +419,64 @@ void MainWindow::on_output_dir_set_clicked()
 
 void MainWindow::on_shutter_clicked()
 {
+    print = true;
+    timer_1.start();
+
     QString cmd_img = "jpeg_shutter()";
     uart_send(cmd_img);
 
     img_cout ++;
     r_d = 0;
 
+    QStringList sFileAsList    ;
+    QFile fTextFile("com_num.conf");
+    QString data_str ;
+    if(fTextFile.open(QIODevice::ReadWrite | QIODevice::Text))
+    {
+        QTextStream tStream(&fTextFile);
+        tStream.setCodec("UTF-8");
+        //write Text into QStringList
+        while(!tStream.atEnd())
+        {
+            data_str = tStream.readAll();
+        }
 
-//        QString x = "0FFD8FFDB004300100B0C0E0C0A100E0D0E1211101318291B181616183224261E293B343E3D3A34393841495E50414559463839526F53596164696A693F4F737B72667A5E676965FFDB004301111212181518301B1B30654339436565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565656565FFC00011080438078003012200021101031101FFC4001F0000010501010101010100000000000000000102030405060708090A0BFFC400B5100002010303020403050504040000017D01020300041105122131410613516107227114328191A1082342B1C11552D1F02433627282090A161718191A25262728292A3435363738393A434445464748494A535455565758595A636465666768696A737475767778797A838485868788898A92939495969798999AA2A3A4A5A6A7A8A9AAB2B3B4B5B6B7B8B9BAC2C3C4C5C6C7C8C9CAD2D3D4D5D6D7D8D9DAE1E2E3E4E5E6E7E8E9EAF1F2F3F4F5F6F7F8F9FAFFC4001F0100030101010101010101010000000000000102030405060708090A0BFFC400B51100020102040403040705040400010277000102031104052131061241510761711322328108144291A1B1C109233352F0156272D10A162434E125F11718191A262728292A35363738393A434445464748494A535455565758595A636465666768696A737475767778797A82838485868788898A92939495969798999AA2A3A4A5A6A7A8A9AAB2B3B4B5B6B7B8B9BAC2C3C4C5C6C7C8C9CAD2D3D4D5D6D7D8D9DAE2E3E4E5E6E7E8E9EAF2F3F4F5F6F7F8F9FAFFDA000C03010002110311003F00CFF0DDA2CD7DE6BAE4C4415FAFF9FE75DDC678AC7D3ED422646413CD6B460E2A248891643D29218608A8C53D4567";
+        cout << "data_str =  "<< endl << data_str.toStdString() << endl;
 
-//         QString h =  "FFD8FF"  ;
-//        int a = x.indexOf(h, Qt::CaseInsensitive);
-
-//        cout << "a "  << a << endl;
-
-//        QString after = x.mid(a); // Apple
-//        cout << "after = " <<after.toStdString() << endl;
+        sFileAsList = data_str.split("\n");
 
 
-//    QString file_name ;
-//    file_name =   save_path + "/uart_img_" + QString::number(img_cout) + ".jpg";
-//    int a = 0;
-//    cout << "file_name = " << file_name.toStdString() << endl;
-////    QString data_test = "FFD8FFDB004300100B0C0E0C0A100E0D0E1211101318291B181";
-////    QString data_test = "FFD8FFDB004300100B0C0E0C0A100E0D0E1211101318291B181616183224261E293B343E3D3A34393841495E50414559";
+        for (int i = 0; i < sFileAsList.size() ; i ++)
+        {
+            if (sFileAsList[i].contains("image_num"))
+            {
+                QString pr = "=";
+                int pos = sFileAsList[i].indexOf(pr,Qt::CaseSensitive);
+                QString num = sFileAsList[i].mid(pos+1);
+                sFileAsList[i] = sFileAsList[i].left(pos+1) +QString::number(img_cout);
+            }
+        }
 
-//    QString data_test = "FFD8FFDB";
+        //Check if FileList is empty
+        if (sFileAsList.isEmpty())
+        {
+            fTextFile.close();
+            return ;
+        }
 
-//    QFile file(file_name);
-//    if (file.open(QIODevice::WriteOnly))
-//    {
-//           QByteArray data_img = QByteArray::fromHex(data_test.toUtf8());
+        //Rewrite QStringList into Textfile
+        tStream.seek(0);
+        for (int i = 0; i < sFileAsList.size(); ++i)
+        {
+            if (i == ( sFileAsList.size() - 1) )
+                fTextFile.write(sFileAsList[i].toUtf8()) ;// + "\n");
+            else
+                fTextFile.write(sFileAsList[i].toUtf8() + "\n");
+        }
 
-//           file.write(data_img);
-//    }
+        fTextFile.close();
+        }
 
-//    file.close();
+       return ;
 
-//    img_cout ++;
-
-//        QString data_test = "FFD8FFD";
-//        cout << "data_test.length " << data_test.length() << endl ;
 }

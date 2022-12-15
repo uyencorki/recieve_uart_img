@@ -43,7 +43,6 @@
 
 
 #include <QMainWindow>
-#include <QTimer>
 #include <QList>
 #include <QInputDialog>
 #include <QStandardItem>
@@ -62,6 +61,8 @@ class MainWindow : public QMainWindow
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
+    QTimer *timer;
+
 
 private slots:
     void on_set_com_clicked();
@@ -73,6 +74,9 @@ private slots:
     void receive_data();
 
     void uart_debug_setting();
+
+    void MyTimerSlot();
+
 
 
 private:
